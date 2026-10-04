@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLM Playground - Smart Clinic</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
+    <!-- Header -->
+    <header
+        class="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-notes-medical text-cyan-400 text-xl"></i>
+            <h1 class="font-bold text-lg text-slate-100">Smart Clinic AI Playground</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <span
+                class="text-xs bg-slate-800 border border-slate-700 text-cyan-300 px-3 py-1 rounded-full flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Model: <strong id="header-model">qwen/qwen3.6-27b</strong>
+            </span>
+        </div>
+    </header>
+
+    <!-- Chat Container -->
+    <main class="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col gap-4 overflow-y-auto" id="chat-box">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-sm text-slate-400">
+            💡 <strong>Hướng dẫn:</strong> Bấm vào biểu tượng kẹp giấy để đính kèm ảnh thẻ BHYT (chụp nghiêng/xoay tùy
+            ý) và nhấn <strong>Gửi</strong> để kiểm tra tốc độ phản hồi.
+        </div>
+    </main>
+
+    <!-- Input Bar -->
+    <footer class="border-t border-slate-800 bg-slate-900/80 p-4 sticky bottom-0">
+        <div class="max-w-4xl mx-auto flex flex-col gap-2">
+            <!-- Preview Image -->
+            <div id="image-preview-container" class="hidden relative inline-block max-w-[120px]">
+                <img id="image-preview" class="h-20 rounded-lg border border-slate-700 object-cover" />
+                <button type="button" onclick="clearImage()"
+                    class="absolute -top-2 -right-2 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+            </div>
+
+            <form id="chat-form" onsubmit="sendMessage(event)" class="flex gap-2 items-center">
+                <label
+                    class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2.5 rounded-lg border border-slate-700 transition"
+                    title="Đính kèm ảnh">
+                    <i class="fa-solid fa-paperclip"></i>
+                    <input type="file" id="file-input" accept="image/*" class="hidden"
+                        onchange="previewSelectedImage(event)">
+                </label>
+
+                <input type="text" id="prompt-input" placeholder="Nhập prompt (mặc định: Bóc tách BHYT sang JSON)..."
+                    class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500 transition">
+
+                <button type="submit" id="send-btn"
+                    class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 transition">
+                    <span>Gửi</span>
+                    <i class="fa-solid fa-arrow-up"></i>
+                </button>
+            </form>
+        </div>
+    </footer>
+
+    <script>
+        let selectedFile = null;
+
+        function previewSelectedImage(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('image-preview').src = e.target.result;
+                    document.getElementById('image-preview-container').classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function clearImage() {
+            selectedFile = null;
+            document.getElementById('file-input').value = '';
+            document.getElementById('image-preview-container').classList.add('hidden');
+        }
+
+        async function sendMessage(e) {
+            e.preventDefault();
+            const promptInput = document.getElementById('prompt-input');
+            const sendBtn = document.getElementById('send-btn');
+            const chatBox = document.getElementById('chat-box');
+
+            const text = promptInput.value.trim();
+            if (!text && !selectedFile) return;
+
+            // 1. Hiển thị tin nhắn người dùng
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'flex flex-col items-end gap-1';
+            let imgHtml = '';
+            if (selectedFile) {
+                const previewUrl = URL.createObjectURL(selectedFile);
+                imgHtml = `<img src="${previewUrl}" class="max-h-48 rounded-lg border border-slate-700 mb-1" />`;
+            }
+            userMsgDiv.innerHTML = `
+                <div class="bg-cyan-600/20 border border-cyan-500/40 text-slate-100 rounded-2xl rounded-tr-none px-4 py-2.5 max-w-xl text-sm">
+                    ${imgHtml}
+                    <div>${text || "(Yêu cầu bóc tách ảnh)"}</div>
+                </div>
+                <span class="text-[11px] text-slate-500">Bạn</span>
+            `;
+            chatBox.appendChild(userMsgDiv);
+
+            // 2. Loading state
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'flex flex-col items-start gap-1';
+            loadingDiv.id = 'loading-state';
+            loadingDiv.innerHTML = `
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none px-4 py-3 text-sm flex items-center gap-2 text-slate-400">
+                    <i class="fa-solid fa-spinner fa-spin text-cyan-400"></i> Đang suy luận qua Groq LPU...
+                </div>
+            `;
+            chatBox.appendChild(loadingDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            const formData = new FormData();
+            formData.append('prompt', text || "Bóc tách đầy đủ thông tin thẻ BHYT này và trả về JSON chuẩn.");
+            if (selectedFile) {
+                formData.append('file', selectedFile);
+            }
+
+            promptInput.value = '';
+            clearImage();
+            sendBtn.disabled = true;
+
+            try {
+                const res = await fetch('/api/v1/chat', { method: 'POST', body: formData });
+                const data = await res.json();
+                loadingDiv.remove();
+
+                // Kiểm tra nếu API trả về mã lỗi (400, 500...)
+                if (!res.ok) {
+                    throw new Error(data.detail || "Có lỗi xảy ra từ máy chủ");
+                }
+
+                // 3. Hiển thị phản hồi từ AI
+                const aiMsgDiv = document.createElement('div');
+                aiMsgDiv.className = 'flex flex-col items-start gap-1';
+
+                let formattedReply = data.reply || "";
+                if (formattedReply.trim().startsWith('{') || formattedReply.trim().startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(formattedReply);
+                        formattedReply = `<pre class="text-xs bg-slate-950 p-3 rounded-lg overflow-x-auto text-emerald-400 font-mono">${JSON.stringify(parsed, null, 2)}</pre>`;
+                    } catch (_) { }
+                } else {
+                    formattedReply = `<div class="whitespace-pre-wrap">${formattedReply}</div>`;
+                }
+
+                aiMsgDiv.innerHTML = `
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none px-4 py-3 max-w-2xl text-sm">
+                        <div class="flex items-center gap-3 border-b border-slate-800 pb-2 mb-2 text-xs text-slate-400">
+                            <span><i class="fa-solid fa-microchip text-cyan-400"></i> ${data.model}</span>
+                            <span class="text-amber-400 font-semibold"><i class="fa-solid fa-bolt"></i> ${data.latency_ms} ms (${(data.latency_ms / 1000).toFixed(2)}s)</span>
+                        </div>
+                        ${formattedReply}
+                    </div>
+                    <span class="text-[11px] text-slate-500">AI Assistant</span>
+                `;
+                chatBox.appendChild(aiMsgDiv);
+            } catch (err) {
+                loadingDiv.remove();
+                alert("Lỗi gọi API: " + err.message);
+            } finally {
+                sendBtn.disabled = false;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+        }
+    </script>
+</body>
+
+</html>
